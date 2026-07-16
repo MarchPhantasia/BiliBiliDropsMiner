@@ -67,7 +67,7 @@ class MinerGUI(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"Bilibili 直播掉宝助手 {APP_VERSION}")
+        self.setWindowTitle("Bilibili 直播掉宝助手")
         self.resize(1040, 760)
         self.setMinimumSize(860, 620)
         self._size_expanded = (1040, 920)

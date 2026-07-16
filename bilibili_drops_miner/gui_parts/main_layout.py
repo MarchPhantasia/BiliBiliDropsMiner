@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import sys
+
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -181,7 +183,11 @@ def build_main_window_layout(
 
     task_text = QPlainTextEdit()
     task_text.setReadOnly(True)
-    task_text.setFont(QFont("Consolas", 10))
+    fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+    if sys.platform == "darwin":
+        fixed_font.setFamily("Menlo")
+    fixed_font.setPointSize(10)
+    task_text.setFont(fixed_font)
     task_text.setLineWrapMode(QPlainTextEdit.NoWrap)
     task_text.setMinimumHeight(160)
     task_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -214,7 +220,7 @@ def build_main_window_layout(
 
     log_text = QPlainTextEdit()
     log_text.setReadOnly(True)
-    log_text.setFont(QFont("Consolas", 10))
+    log_text.setFont(fixed_font)
     log_text.setMaximumBlockCount(5000)
     log_text.setMinimumHeight(160)
     log_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)

@@ -122,7 +122,7 @@ Selenium Manager 会自动下载缺失的浏览器驱动。
 
 ## 🚀 快速开始
 
-### Windows
+### Windows / Linux / macOS 源码运行
 
 1. 安装 Python 3.10+
 2. 克隆项目并安装依赖
@@ -134,17 +134,30 @@ Selenium Manager 会自动下载缺失的浏览器驱动。
    python bilibili_gui.py
    ```
 
-### Linux / macOS
+macOS 上的 GUI 与 Windows 共用同一套界面和功能，支持 Chrome / Edge 自动获取 Cookie、房间号和任务 ID。
 
-1. 安装 Python 3.10+
-2. 安装依赖
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. 启动 CLI
-   ```bash
-   python bilibili.py --cookie "SESSDATA=xxx; bili_jct=xxx" --rooms "23612045"
-   ```
+### macOS 双击应用
+
+在 Apple Silicon 或 Intel Mac 上用对应架构的 Python 执行：
+
+```bash
+python build.py --target gui --clean --dmg
+```
+
+生成的产物：
+
+- `dist/Bilibili Drops Miner.app`：可直接双击运行
+- `dist/Bilibili Drops Miner-macOS.dmg`：可分发的磁盘镜像
+
+本地构建会由 PyInstaller 进行 ad-hoc 签名。如果要向其他用户公开发布，还应使用 Apple Developer ID 签名并完成 notarization。
+
+### CLI
+
+GUI 和 CLI 可以并存。服务器或纯命令行环境可使用：
+
+```bash
+python bilibili.py --cookie "SESSDATA=xxx; bili_jct=xxx" --rooms "23612045"
+```
 
 ## 📜 使用文档
 
@@ -160,6 +173,9 @@ python bilibili_gui.py
 
 - Cookie 自动获取（浏览器登录后自动回填）
 - 任务 ID 自动获取（抓取任务接口并自动回填）
+- 房间号自动获取
+- 启动 / 停止掉宝、任务进度刷新与奖励领取
+- Gotify / Server 酱通知与详细日志
 - 配置文件保存/加载（JSON）
 
 ### CLI
@@ -196,13 +212,14 @@ python bilibili.py \
    -v
 ```
 
-## 📦 打包 EXE
+## 📦 打包
 
 ```bash
 python build.py               # 开发模式
-python build.py --target gui  # PyInstaller 打包 GUI
+python build.py --target gui  # PyInstaller 打包当前平台 GUI
 python build.py --target cli  # PyInstaller 打包 CLI
-python build_nuitka.py --target gui  # Nuitka 轻量打包 GUI
+python build.py --target gui --dmg  # macOS 额外生成 DMG
+python build_nuitka.py --target gui  # Nuitka 打包当前平台 GUI
 ```
 
 ## 🧩 配置文件

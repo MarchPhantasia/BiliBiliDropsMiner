@@ -15,6 +15,7 @@ from bilibili_drops_miner.gui_parts.browser_utils import (
     browser_try_order,
     extract_room_id_from_live_url,
     find_browser,
+    find_browser_binary,
 )
 from bilibili_drops_miner.gui_parts.extension_builder import (
     write_chrome_extension,
@@ -157,6 +158,9 @@ def start_browser_sniff(
                             need_page=need_page,
                         )
                         opts = webdriver.EdgeOptions()
+                        browser_binary = find_browser_binary("edge")
+                        if browser_binary:
+                            opts.binary_location = browser_binary
                         opts.add_argument(f"--load-extension={ext_dir}")
                         driver = webdriver.Edge(options=opts)
                         browser_type = "edge"
@@ -170,6 +174,9 @@ def start_browser_sniff(
                             need_page=need_page,
                         )
                         opts = webdriver.ChromeOptions()
+                        browser_binary = find_browser_binary("chrome")
+                        if browser_binary:
+                            opts.binary_location = browser_binary
                         opts.enable_bidi = True
                         opts.enable_webextensions = True
                         opts.add_argument("--remote-allow-origins=*")
