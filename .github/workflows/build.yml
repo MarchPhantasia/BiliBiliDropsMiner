@@ -61,8 +61,10 @@ jobs:
         include:
           - target: gui
             package: bilibili-drops-miner-gui
+            folder: Bilibili Drops Miner
           - target: cli
             package: bilibili-drops-miner-cli
+            folder: bilibili-drops-miner-cli
     steps:
       - uses: actions/checkout@v4
 
@@ -107,7 +109,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "dist-nuitka/${{ matrix.package }}" -DestinationPath "dist/${{ matrix.package }}.zip" -CompressionLevel Fastest -Force
+          Compress-Archive -Path "dist-nuitka/${{ matrix.folder }}" -DestinationPath "dist/${{ matrix.package }}.zip" -CompressionLevel Fastest -Force
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

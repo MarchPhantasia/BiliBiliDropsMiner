@@ -77,8 +77,13 @@ def build(
     print(format_cmd(cmd))
     subprocess.check_call(cmd)
 
-    source_dir = OUTPUT_DIR / f"{Path(entry).stem}.dist"
-    target_dir = OUTPUT_DIR / output_name
+    if windowed and sys.platform == "darwin":
+        # --macos-create-app-bundle 输出 <entry>.app 而非 <entry>.dist
+        source_dir = OUTPUT_DIR / f"{Path(entry).stem}.app"
+        target_dir = OUTPUT_DIR / f"{output_name}.app"
+    else:
+        source_dir = OUTPUT_DIR / f"{Path(entry).stem}.dist"
+        target_dir = OUTPUT_DIR / output_name
     if source_dir == target_dir:
         return
     if not source_dir.exists():
@@ -86,7 +91,7 @@ def build(
     if target_dir.exists():
         shutil.rmtree(target_dir)
     source_dir.rename(target_dir)
-    print(f"Done: {target_dir}/")
+    print(f"Done: {target_dir}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,7 +113,7 @@ def main() -> None:
     if args.target in ("gui", "all"):
         build(
             "bilibili_gui.py",
-            "bilibili-drops-miner-gui",
+            "Bilibili Drops Miner",
             windowed=True,
         )
 
