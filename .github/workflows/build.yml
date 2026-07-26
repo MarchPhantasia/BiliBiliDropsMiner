@@ -6,11 +6,13 @@ on:
     paths:
       - '.github/workflows/build.yml'
       - 'requirements.txt'
+      - 'build.py'
       - 'build_nuitka.py'
       - 'bilibili.py'
       - 'bilibili_gui.py'
       - 'bilibili_drops_miner/**'
       - 'img/app.ico'
+      - 'img/app.icns'
   workflow_dispatch:
     inputs:
       release:
@@ -29,6 +31,7 @@ concurrency:
 
 jobs:
   prepare:
+    name: Prepare version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -52,7 +55,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
-  build:
+  build-windows:
+    name: Windows ${{ matrix.target }} (Nuitka)
     needs: prepare
     runs-on: windows-latest
     strategy:
@@ -60,10 +64,10 @@ jobs:
       matrix:
         include:
           - target: gui
-            package: bilibili-drops-miner-gui
+            package: bilibili-drops-miner-win
             folder: Bilibili Drops Miner
           - target: cli
-            package: bilibili-drops-miner-cli
+            package: bilibili-drops-miner-cli-win
             folder: bilibili-drops-miner-cli
     steps:
       - uses: actions/checkout@v4
@@ -102,48 +106,81 @@ jobs:
           python -m pip install --disable-pip-version-check -r requirements.txt
           python -m pip install --disable-pip-version-check nuitka ordered-set zstandard
 
-      - name: Build EXE with Nuitka
+      - name: Build with Nuitka
         run: python build_nuitka.py --target ${{ matrix.target }}
 
-      - name: Package ZIP file
+      - name: Package ZIP
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "dist-nuitka/${{ matrix.folder }}" -DestinationPath "dist/${{ matrix.package }}.zip" -CompressionLevel Fastest -Force
+          Compress-Archive -Path "dist-nuitka/${{ matrix.folder }}" -DestinationPath "dist/${{ matrix.package }}-${{ needs.prepare.outputs.version }}.zip" -CompressionLevel Fastest -Force
 
-      - name: Upload build artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.package }}
-          path: dist/${{ matrix.package }}.zip
+          path: dist/${{ matrix.package }}-*.zip
+          retention-days: 30
+
+  build-macos:
+    name: macOS gui (PyInstaller)
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version file
+        shell: bash
+        run: |
+          cat > bilibili_drops_miner/_version.py <<EOF
+          APP_VERSION = "${{ needs.prepare.outputs.version }}"
+          UPDATE_CHANNEL = "${{ needs.prepare.outputs.update_channel }}"
+          REPOSITORY_URL = "https://github.com/mi0e/BiliBiliDropsMiner"
+          LATEST_RELEASE_API = "https://api.github.com/repos/mi0e/BiliBiliDropsMiner/releases/latest"
+          RELEASES_URL = "https://github.com/mi0e/BiliBiliDropsMiner/releases/latest"
+          EOF
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pyinstaller
+
+      - name: Build app bundle with PyInstaller
+        run: python build.py --target gui
+
+      - name: Package ZIP (ditto preserves bundle symlinks)
+        run: ditto -c -k --keepParent "dist/Bilibili Drops Miner.app" "dist/bilibili-drops-miner-mac-${{ needs.prepare.outputs.version }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilibili-drops-miner-mac
+          path: dist/bilibili-drops-miner-mac-*.zip
           retention-days: 30
 
   release:
-    needs: [prepare, build]
+    name: Publish release
+    needs: [prepare, build-windows, build-macos]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-  
       - uses: actions/download-artifact@v4
         with:
           pattern: bilibili-drops-miner-*
           path: dist/
           merge-multiple: true
-  
-      - name: Rename release files
-        run: |
-          mv dist/bilibili-drops-miner-gui.zip dist/bilibili-drops-miner-gui-${{ needs.prepare.outputs.version }}.zip
-          mv dist/bilibili-drops-miner-cli.zip dist/bilibili-drops-miner-cli-${{ needs.prepare.outputs.version }}.zip
-  
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
           name: ${{ needs.prepare.outputs.version }}
           generate_release_notes: true
-          files: |
-            dist/bilibili-drops-miner-gui-${{ needs.prepare.outputs.version }}.zip
-            dist/bilibili-drops-miner-cli-${{ needs.prepare.outputs.version }}.zip
+          files: dist/*.zip
