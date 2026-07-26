@@ -84,7 +84,6 @@ APP_STYLE_SHEET = """
 
 def configure_qt_app(app: QApplication) -> None:
     app.setApplicationName("Bilibili 直播掉宝助手")
-    app.setApplicationDisplayName("Bilibili 直播掉宝助手")
     app.setOrganizationName("BiliBiliDropsMiner")
     app.setStyle("Fusion")
     if sys.platform == "darwin":
