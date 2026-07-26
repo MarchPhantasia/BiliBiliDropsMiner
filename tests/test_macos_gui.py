@@ -17,7 +17,7 @@ from bilibili_drops_miner.gui_parts.browser_utils import (
     find_browser_binary,
 )
 from bilibili_drops_miner.gui_parts.app_style import configure_qt_app
-from bilibili_drops_miner.gui_parts.main_window import MinerGUI
+from bilibili_drops_miner.gui_parts.main_window import APP_VERSION, MinerGUI
 
 
 class MacBrowserSupportTests(unittest.TestCase):
@@ -76,7 +76,9 @@ class GuiParitySmokeTests(unittest.TestCase):
         try:
             window.show()
             self.app.processEvents()
-            self.assertEqual(window.windowTitle(), "Bilibili 直播掉宝助手")
+            self.assertEqual(
+                window.windowTitle(), f"Bilibili 直播掉宝助手 {APP_VERSION}"
+            )
             labels = {button.text() for button in window.findChildren(QPushButton)}
             self.assertTrue(
                 {

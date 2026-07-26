@@ -186,6 +186,8 @@ def build_main_window_layout(
     fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
     if sys.platform == "darwin":
         fixed_font.setFamily("Menlo")
+    elif sys.platform == "win32":
+        fixed_font.setFamily("Consolas")
     fixed_font.setPointSize(10)
     task_text.setFont(fixed_font)
     task_text.setLineWrapMode(QPlainTextEdit.NoWrap)

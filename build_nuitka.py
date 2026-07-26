@@ -60,7 +60,7 @@ def build(
                 [
                     "--macos-create-app-bundle",
                     "--macos-app-name=Bilibili Drops Miner",
-                    "--macos-app-identifier=com.mi0e.BiliBiliDropsMiner",
+                    "--macos-signed-app-name=com.mi0e.BiliBiliDropsMiner",
                 ]
             )
             if ICON_PATH.exists():

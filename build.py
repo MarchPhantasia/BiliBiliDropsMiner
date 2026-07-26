@@ -82,8 +82,9 @@ def build(
 
     if windowed and sys.platform == "darwin":
         print(f"Done: dist/{name}.app")
-    elif onefile and sys.platform == "win32":
-        print(f"Done: dist/{name}.exe")
+    elif onefile:
+        suffix = ".exe" if sys.platform == "win32" else ""
+        print(f"Done: dist/{name}{suffix}")
     else:
         print(f"Done: dist/{name}/")
 
@@ -144,7 +145,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="also create a DMG after the macOS GUI build.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.dmg:
+        if sys.platform != "darwin":
+            parser.error("--dmg is only available on macOS")
+        if args.target not in ("gui", "all"):
+            parser.error("--dmg requires --target gui or --target all")
+    return args
 
 
 def main() -> None:
@@ -197,8 +204,6 @@ def main() -> None:
             extra_args=gui_extra_args,
         )
         if args.dmg:
-            if sys.platform != "darwin":
-                raise RuntimeError("--dmg is only available on macOS")
             create_macos_dmg(gui_app_name)
 
     if args.target in ("cli", "all"):
