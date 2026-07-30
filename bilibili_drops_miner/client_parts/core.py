@@ -73,6 +73,7 @@ from bilibili_drops_miner.client_parts.task_parsing import (
 from bilibili_drops_miner.client_parts.tasks import (
     normalize_task_ids,
     parse_task_progress_payload,
+    resolve_reward_task_ids,
 )
 from bilibili_drops_miner.client_parts.wbi import (
     encode_query,
@@ -522,11 +523,20 @@ class BilibiliClient:
             )
             if payload.get("code") == 0 or not self._is_rate_limited_payload(payload):
                 break
-            LOGGER.info(
-                "查询领奖信息触发限频 task_id=%s attempt=%s，稍后重试",
-                normalized_id,
-                attempt,
-            )
+            if attempt < len(MISSION_RETRY_DELAYS):
+                LOGGER.info(
+                    "查询领奖信息触发限频 task_id=%s attempt=%s/%s，稍后重试",
+                    normalized_id,
+                    attempt,
+                    len(MISSION_RETRY_DELAYS),
+                )
+            else:
+                LOGGER.warning(
+                    "查询领奖信息持续限频 task_id=%s attempt=%s/%s，停止重试",
+                    normalized_id,
+                    attempt,
+                    len(MISSION_RETRY_DELAYS),
+                )
         return parse_mission_reward_info(payload, normalized_id=normalized_id)
 
     async def receive_mission_reward(
@@ -556,24 +566,50 @@ class BilibiliClient:
             )
             if payload.get("code") == 0 or not self._is_rate_limited_payload(payload):
                 break
-            LOGGER.info(
-                "领取奖励触发限频 task_id=%s attempt=%s，稍后重试",
-                info.task_id,
-                attempt,
-            )
+            if attempt < len(MISSION_RETRY_DELAYS):
+                LOGGER.info(
+                    "领取奖励触发限频 task_id=%s attempt=%s/%s，稍后重试",
+                    info.task_id,
+                    attempt,
+                    len(MISSION_RETRY_DELAYS),
+                )
+            else:
+                LOGGER.warning(
+                    "领取奖励持续限频 task_id=%s attempt=%s/%s，停止重试",
+                    info.task_id,
+                    attempt,
+                    len(MISSION_RETRY_DELAYS),
+                )
         return reward_claim_result_from_payload(info, payload)
 
     async def receive_all_mission_rewards(
         self, task_ids: list[str]
     ) -> list[MissionRewardClaimResult]:
         normalized_ids = normalize_task_ids(task_ids)
+        if not normalized_ids:
+            return []
+
+        try:
+            progresses = await self.get_task_progress(normalized_ids)
+        except Exception as exc:
+            LOGGER.warning("领取前查询子任务失败，将使用原任务 ID: %s", exc)
+            reward_task_ids = resolve_reward_task_ids(normalized_ids, [])
+        else:
+            reward_task_ids = resolve_reward_task_ids(normalized_ids, progresses)
+            if reward_task_ids != normalized_ids:
+                LOGGER.info(
+                    "领奖任务已展开 parent_count=%s reward_task_count=%s",
+                    len(normalized_ids),
+                    len(reward_task_ids),
+                )
+
         results: list[MissionRewardClaimResult] = []
-        for index, task_id in enumerate(normalized_ids):
+        for index, task_id in enumerate(reward_task_ids):
             try:
                 info = await self.get_mission_reward_info(task_id)
                 results.append(await self.receive_mission_reward(info))
             except Exception as exc:
                 results.append(failed_reward_claim_result(task_id, exc))
-            if index < len(normalized_ids) - 1:
+            if index < len(reward_task_ids) - 1:
                 await asyncio.sleep(REWARD_CLAIM_INTERVAL_SECONDS)
         return results
