@@ -8,9 +8,9 @@ on:
       - 'requirements.txt'
       - 'build.py'
       - 'build_nuitka.py'
-      - 'bilibili.py'
       - 'bilibili_gui.py'
       - 'bilibili_drops_miner/**'
+      - '!bilibili_drops_miner/cli.py'
       - 'img/app.ico'
       - 'img/app.icns'
   workflow_dispatch:
@@ -56,19 +56,9 @@ jobs:
           echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
   build-windows:
-    name: Windows ${{ matrix.target }} (Nuitka)
+    name: Windows GUI (Nuitka)
     needs: prepare
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: gui
-            package: bilibili-drops-miner-win
-            folder: Bilibili Drops Miner
-          - target: cli
-            package: bilibili-drops-miner-cli-win
-            folder: bilibili-drops-miner-cli
     steps:
       - uses: actions/checkout@v4
 
@@ -96,9 +86,9 @@ jobs:
             ~\AppData\Local\Nuitka
             ~\AppData\Local\ccache
             dist-nuitka\*.build
-          key: ${{ runner.os }}-py${{ steps.setup-python.outputs.python-version }}-nuitka-${{ matrix.target }}-${{ needs.prepare.outputs.version }}-${{ hashFiles('requirements.txt', 'build_nuitka.py', 'bilibili.py', 'bilibili_gui.py', 'bilibili_drops_miner/**/*.py') }}
+          key: ${{ runner.os }}-py${{ steps.setup-python.outputs.python-version }}-nuitka-gui-${{ needs.prepare.outputs.version }}-${{ hashFiles('requirements.txt', 'build_nuitka.py', 'bilibili_gui.py', 'bilibili_drops_miner/**/*.py') }}
           restore-keys: |
-            ${{ runner.os }}-py${{ steps.setup-python.outputs.python-version }}-nuitka-${{ matrix.target }}-
+            ${{ runner.os }}-py${{ steps.setup-python.outputs.python-version }}-nuitka-gui-
             ${{ runner.os }}-py${{ steps.setup-python.outputs.python-version }}-nuitka-
 
       - name: Install dependencies
@@ -107,23 +97,23 @@ jobs:
           python -m pip install --disable-pip-version-check nuitka ordered-set zstandard
 
       - name: Build with Nuitka
-        run: python build_nuitka.py --target ${{ matrix.target }}
+        run: python build_nuitka.py --target gui
 
       - name: Package ZIP
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "dist-nuitka/${{ matrix.folder }}" -DestinationPath "dist/${{ matrix.package }}-${{ needs.prepare.outputs.version }}.zip" -CompressionLevel Fastest -Force
+          Compress-Archive -Path "dist-nuitka/Bilibili Drops Miner" -DestinationPath "dist/bilibili-drops-miner-win-${{ needs.prepare.outputs.version }}.zip" -CompressionLevel Fastest -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.package }}
-          path: dist/${{ matrix.package }}-*.zip
+          name: bilibili-drops-miner-win
+          path: dist/bilibili-drops-miner-win-*.zip
           retention-days: 30
 
   build-macos:
-    name: macOS gui (PyInstaller)
+    name: macOS GUI (PyInstaller)
     needs: prepare
     runs-on: macos-latest
     steps:

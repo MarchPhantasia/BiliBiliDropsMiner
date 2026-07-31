@@ -5,6 +5,7 @@ import queue
 import sys
 import threading
 import webbrowser
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent
@@ -19,11 +20,13 @@ from bilibili_drops_miner.config import MinerConfig
 from bilibili_drops_miner.gui_parts.app_style import configure_qt_app
 from bilibili_drops_miner.gui_parts.browser_actions import BrowserActions
 from bilibili_drops_miner.gui_parts.config_io import (
+    GuiConfigValues,
     build_config_payload,
     load_config_data,
     save_config_data,
     values_from_config_data,
 )
+from bilibili_drops_miner.gui_parts.gui_state import GuiStateStore
 from bilibili_drops_miner.gui_parts.log_handler import QueueLogHandler
 from bilibili_drops_miner.gui_parts.main_layout import (
     MainWindowCallbacks,
@@ -65,8 +68,9 @@ class MinerGUI(QMainWindow):
     # Qt auto-queues the call onto the GUI thread (sender lives in non-Qt thread).
     ui_call = Signal(object, tuple, dict)
 
-    def __init__(self) -> None:
+    def __init__(self, gui_state: GuiStateStore | None = None) -> None:
         super().__init__()
+        self._gui_state = gui_state if gui_state is not None else GuiStateStore()
         self.setWindowTitle(f"Bilibili 直播掉宝助手 {APP_VERSION}")
         self.resize(1040, 760)
         self.setMinimumSize(860, 620)
@@ -106,6 +110,8 @@ class MinerGUI(QMainWindow):
             post_ui_task=self._post_ui_task,
         )
         self._install_logging()
+        self._restore_window_geometry()
+        self._restore_last_config()
 
         self._log_timer = QTimer(self)
         self._log_timer.setInterval(120)
@@ -167,6 +173,42 @@ class MinerGUI(QMainWindow):
         self._log_toggle_btn = widgets.log_toggle_btn
         self.claim_rewards_btn = widgets.claim_rewards_btn
         self._log_expanded = False
+
+    # ---------- local GUI state ----------
+
+    def _restore_window_geometry(self) -> None:
+        geometry = self._gui_state.window_geometry()
+        if not geometry.isEmpty() and self.restoreGeometry(geometry):
+            return
+        self._center_on_primary_screen()
+
+    def _center_on_primary_screen(self) -> None:
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        x = available.left() + max(0, (available.width() - self.width()) // 2)
+        y = available.top() + max(0, (available.height() - self.height()) // 2)
+        self.move(x, y)
+
+    def _restore_last_config(self) -> None:
+        path = self._gui_state.last_config_path()
+        if path is None:
+            return
+        if not path.is_file():
+            logging.getLogger(__name__).warning(
+                "上次使用的配置文件不存在，已取消自动加载: %s",
+                path,
+            )
+            self._gui_state.clear_last_config_path()
+            self._gui_state.sync()
+            return
+        self._load_config_path(
+            path,
+            show_error=False,
+            remember=False,
+            automatic=True,
+        )
 
     # ---------- logging / cross-thread ----------
 
@@ -522,6 +564,11 @@ class MinerGUI(QMainWindow):
     # ---------- close ----------
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        try:
+            self._gui_state.set_window_geometry(self.saveGeometry())
+            self._gui_state.sync()
+        except Exception:
+            logging.getLogger(__name__).exception("保存 GUI 状态失败")
         self._ui_alive = False
         try:
             self.stop()
@@ -533,37 +580,72 @@ class MinerGUI(QMainWindow):
 
     # ---------- config load/save ----------
 
+    def _apply_config_values(self, values: GuiConfigValues) -> None:
+        self.cookie_edit.setText(values.cookie)
+        self.rooms_edit.setText(values.rooms_text)
+        self.threads_edit.setText(values.thread_count_text)
+        self.reconnect_edit.setText(values.reconnect_delay_text)
+        self.task_ids_edit.setText(values.task_ids_text)
+        self.task_interval_edit.setText(values.task_query_interval_text)
+        self.notify_urls_edit.setText(values.notify_urls_text)
+        self.disable_task_notify_check.setChecked(not values.notify_on_task_complete)
+        self.verbose_check.setChecked(values.verbose)
+
+    def _load_config_path(
+        self,
+        path: str | Path,
+        *,
+        show_error: bool,
+        remember: bool,
+        automatic: bool,
+    ) -> bool:
+        try:
+            values = values_from_config_data(load_config_data(path))
+            self._apply_config_values(values)
+            if remember:
+                self._gui_state.set_last_config_path(path)
+                self._gui_state.sync()
+            message = "已自动加载上次配置" if automatic else "配置已加载"
+            logging.getLogger(__name__).info("%s: %s", message, path)
+            return True
+        except Exception as exc:
+            if show_error:
+                self._show_error("加载失败", str(exc))
+            else:
+                logging.getLogger(__name__).warning(
+                    "自动加载上次配置失败: %s (%s)",
+                    path,
+                    exc,
+                )
+            return False
+
+    def _config_dialog_path(self, *, save: bool) -> str:
+        path = self._gui_state.last_config_path()
+        if path is not None and path.is_file():
+            return str(path)
+        return "config.json" if save else ""
+
     def load_config(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
             "加载配置文件",
-            "",
+            self._config_dialog_path(save=False),
             "JSON 文件 (*.json);;所有文件 (*.*)",
         )
         if not path:
             return
-        try:
-            values = values_from_config_data(load_config_data(path))
-            self.cookie_edit.setText(values.cookie)
-            self.rooms_edit.setText(values.rooms_text)
-            self.threads_edit.setText(values.thread_count_text)
-            self.reconnect_edit.setText(values.reconnect_delay_text)
-            self.task_ids_edit.setText(values.task_ids_text)
-            self.task_interval_edit.setText(values.task_query_interval_text)
-            self.notify_urls_edit.setText(values.notify_urls_text)
-            self.disable_task_notify_check.setChecked(
-                not values.notify_on_task_complete
-            )
-            self.verbose_check.setChecked(values.verbose)
-            logging.getLogger(__name__).info("配置已加载: %s", path)
-        except Exception as exc:
-            self._show_error("加载失败", str(exc))
+        self._load_config_path(
+            path,
+            show_error=True,
+            remember=True,
+            automatic=False,
+        )
 
     def save_config(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self,
             "保存配置文件",
-            "config.json",
+            self._config_dialog_path(save=True),
             "JSON 文件 (*.json);;所有文件 (*.*)",
         )
         if not path:
@@ -574,6 +656,8 @@ class MinerGUI(QMainWindow):
                 path,
                 build_config_payload(config, verbose=self.verbose_check.isChecked()),
             )
+            self._gui_state.set_last_config_path(path)
+            self._gui_state.sync()
             logging.getLogger(__name__).info("配置已保存: %s", path)
         except Exception as exc:
             self._show_error("保存失败", str(exc))
