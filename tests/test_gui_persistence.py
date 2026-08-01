@@ -83,6 +83,7 @@ class GuiPersistenceTests(unittest.TestCase):
             config_path = Path(temp_dir) / "config.json"
             save_config_data(config_path, self._config_payload())
             state = self._state_for(temp_dir)
+            state.set_saved_cookie("SESSDATA=stale; bili_jct=stale")
             state.set_last_config_path(config_path)
             state.sync()
 
@@ -103,6 +104,75 @@ class GuiPersistenceTests(unittest.TestCase):
                 )
                 self.assertTrue(window.disable_task_notify_check.isChecked())
                 self.assertTrue(window.verbose_check.isChecked())
+            finally:
+                window.close()
+
+    def test_saved_cookie_is_restored_without_a_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = self._state_for(temp_dir)
+            state.set_saved_cookie("SESSDATA=saved; bili_jct=saved")
+            state.sync()
+
+            window = MinerGUI(gui_state=state)
+            try:
+                self.assertEqual(
+                    window.cookie_edit.text(),
+                    "SESSDATA=saved; bili_jct=saved",
+                )
+            finally:
+                window.close()
+
+    def test_auto_fetched_cookie_is_persisted_immediately(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = self._state_for(temp_dir)
+            window = MinerGUI(gui_state=state)
+            try:
+                window._apply_auto_cookie("SESSDATA=fetched; bili_jct=fetched")
+                self.assertEqual(
+                    state.saved_cookie(),
+                    "SESSDATA=fetched; bili_jct=fetched",
+                )
+            finally:
+                window.close()
+
+    def test_externally_imported_cookie_refreshes_running_window(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings_path = Path(temp_dir) / "gui.ini"
+            window_state = GuiStateStore(
+                QSettings(str(settings_path), QSettings.IniFormat)
+            )
+            external_state = GuiStateStore(
+                QSettings(str(settings_path), QSettings.IniFormat)
+            )
+            window = MinerGUI(gui_state=window_state)
+            try:
+                external_state.set_saved_cookie(
+                    "SESSDATA=current-profile; DedeUserID=123"
+                )
+                external_state.mark_cookie_imported("external-revision")
+                external_state.sync()
+
+                window._poll_external_cookie_import()
+
+                self.assertEqual(
+                    window.cookie_edit.text(),
+                    "SESSDATA=current-profile; DedeUserID=123",
+                )
+            finally:
+                window.close()
+
+    def test_task_fetch_uses_single_room_from_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            window = MinerGUI(gui_state=self._state_for(temp_dir))
+            try:
+                window.rooms_edit.setText("23612045")
+                with patch.object(
+                    window.browser_actions,
+                    "auto_fetch_task_ids",
+                ) as auto_fetch:
+                    window.auto_fetch_task_ids()
+
+                auto_fetch.assert_called_once_with(23612045)
             finally:
                 window.close()
 

@@ -89,6 +89,8 @@ class MinerGUI(QMainWindow):
         self.ui_call.connect(self._on_ui_call, Qt.QueuedConnection)
 
         self._build_layout()
+        self.cookie_edit.editingFinished.connect(self._persist_cookie)
+        self.rooms_edit.returnPressed.connect(self.auto_fetch_task_ids)
         self.browser_actions = BrowserActions(
             parent=self,
             show_warning=self._show_warning,
@@ -111,12 +113,20 @@ class MinerGUI(QMainWindow):
         )
         self._install_logging()
         self._restore_window_geometry()
+        self._restore_saved_cookie()
         self._restore_last_config()
+        self._restore_externally_imported_cookie()
+        self._cookie_import_revision = self._gui_state.cookie_import_revision()
 
         self._log_timer = QTimer(self)
         self._log_timer.setInterval(120)
         self._log_timer.timeout.connect(self._flush_log_queue)
         self._log_timer.start()
+
+        self._cookie_import_timer = QTimer(self)
+        self._cookie_import_timer.setInterval(500)
+        self._cookie_import_timer.timeout.connect(self._poll_external_cookie_import)
+        self._cookie_import_timer.start()
 
         self._stop_poll_timer = QTimer(self)
         self._stop_poll_timer.setInterval(120)
@@ -209,6 +219,41 @@ class MinerGUI(QMainWindow):
             remember=False,
             automatic=True,
         )
+
+    def _restore_saved_cookie(self) -> None:
+        cookie = self._gui_state.saved_cookie()
+        if cookie:
+            self.cookie_edit.setText(cookie)
+
+    def _restore_externally_imported_cookie(self) -> None:
+        if not self._gui_state.cookie_import_revision():
+            return
+        cookie = self._gui_state.saved_cookie()
+        if cookie:
+            self.cookie_edit.setText(cookie)
+
+    def _poll_external_cookie_import(self) -> None:
+        try:
+            self._gui_state.sync()
+            revision = self._gui_state.cookie_import_revision()
+            if not revision or revision == self._cookie_import_revision:
+                return
+            self._cookie_import_revision = revision
+            cookie = self._gui_state.saved_cookie()
+            if cookie:
+                self.cookie_edit.setText(cookie)
+                logging.getLogger(__name__).info(
+                    "已从当前 Chrome Profile 同步 Cookie"
+                )
+        except Exception:
+            logging.getLogger(__name__).exception("读取外部 Cookie 同步结果失败")
+
+    def _persist_cookie(self) -> None:
+        try:
+            self._gui_state.set_saved_cookie(self.cookie_edit.text())
+            self._gui_state.sync()
+        except Exception:
+            logging.getLogger(__name__).exception("保存 Cookie 失败")
 
     # ---------- logging / cross-thread ----------
 
@@ -453,6 +498,7 @@ class MinerGUI(QMainWindow):
 
     def _apply_auto_cookie(self, cookie_str: str) -> None:
         self.cookie_edit.setText(cookie_str)
+        self._persist_cookie()
 
     def _apply_auto_task_ids(self, task_ids_str: str) -> None:
         self.task_ids_edit.setText(task_ids_str)
@@ -472,8 +518,11 @@ class MinerGUI(QMainWindow):
         on_cookies=None,
         on_page_url=None,
         on_page_html=None,
+        on_page_state=None,
+        on_task_groups=None,
         browser_preference: str | None = None,
         finish_on_any: bool = False,
+        initial_url: str = "https://www.bilibili.com/",
     ) -> None:
         self.browser_actions.browser_sniff(
             url_keyword,
@@ -482,15 +531,29 @@ class MinerGUI(QMainWindow):
             on_cookies=on_cookies,
             on_page_url=on_page_url,
             on_page_html=on_page_html,
+            on_page_state=on_page_state,
+            on_task_groups=on_task_groups,
             browser_preference=browser_preference,
             finish_on_any=finish_on_any,
+            initial_url=initial_url,
         )
 
     def auto_fetch_room_id(self) -> None:
         self.browser_actions.auto_fetch_room_id()
 
     def auto_fetch_task_ids(self) -> None:
-        self.browser_actions.auto_fetch_task_ids()
+        try:
+            room_ids = parse_room_ids(self.rooms_edit.text().strip())
+        except ValueError as exc:
+            self._show_error("房间号错误", str(exc))
+            return
+        if not room_ids:
+            self._show_warning("提示", "请先输入房间号")
+            return
+        if len(room_ids) != 1:
+            self._show_warning("提示", "自动获取任务 ID 时请只输入一个房间号")
+            return
+        self.browser_actions.auto_fetch_task_ids(room_ids[0])
 
     def auto_fetch_cookie(self) -> None:
         self.browser_actions.auto_fetch_cookie()
@@ -566,6 +629,7 @@ class MinerGUI(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         try:
             self._gui_state.set_window_geometry(self.saveGeometry())
+            self._gui_state.set_saved_cookie(self.cookie_edit.text())
             self._gui_state.sync()
         except Exception:
             logging.getLogger(__name__).exception("保存 GUI 状态失败")

@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable, Iterable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Literal
+from urllib.parse import parse_qs, urlparse
 
 from bilibili_drops_miner.gui_parts.browser_utils import (
     browser_label,
@@ -21,12 +22,15 @@ from bilibili_drops_miner.gui_parts.extension_builder import (
     write_chrome_extension,
     write_edge_extension,
 )
+from bilibili_drops_miner.utils import extract_bili_live_task_groups_from_state
 
 SniffPayloadKind = Literal["cookies", "page", "network"]
 NetworkCallback = Callable[[Any], None]
 CookiesCallback = Callable[[list[dict[str, Any]]], None]
 PageUrlCallback = Callable[[int], None]
 PageHtmlCallback = Callable[[str, str], bool]
+PageStateCallback = Callable[[dict[str, Any], str], bool]
+TaskGroupsCallback = Callable[[list[dict[str, object]], str], bool]
 ErrorCallback = Callable[[str, str], None]
 
 LOGIN_COOKIE_NAMES = {
@@ -38,6 +42,153 @@ LOGIN_COOKIE_NAMES = {
     "b_nut",
     "sid",
 }
+
+
+def normalize_tab_task_groups(payload: Any) -> list[dict[str, object]]:
+    if not isinstance(payload, dict):
+        return []
+    raw_groups = payload.get("groups")
+    tab_count = payload.get("tab_count")
+    if not isinstance(raw_groups, list) or not isinstance(tab_count, int):
+        return []
+
+    groups: list[dict[str, object]] = []
+    for raw_group in raw_groups:
+        if not isinstance(raw_group, dict):
+            continue
+        label = str(raw_group.get("label") or "").strip()
+        raw_task_ids = raw_group.get("task_ids")
+        if not label or not isinstance(raw_task_ids, list):
+            continue
+        task_ids = list(
+            dict.fromkeys(
+                str(task_id).strip()
+                for task_id in raw_task_ids
+                if str(task_id).strip()
+            )
+        )
+        if task_ids:
+            groups.append(
+                {
+                    "label": label,
+                    "task_ids": task_ids,
+                    "active": bool(raw_group.get("active")),
+                }
+            )
+
+    return groups if tab_count > 0 and len(groups) == tab_count else []
+
+
+def task_ids_from_performance_logs(entries: list[dict[str, Any]]) -> list[str]:
+    latest_task_ids: list[str] = []
+    for entry in entries:
+        try:
+            message = json.loads(str(entry.get("message") or ""))["message"]
+            if message.get("method") != "Network.requestWillBeSent":
+                continue
+            request = (message.get("params") or {}).get("request") or {}
+            url = str(request.get("url") or "")
+            if "/x/task/totalv2" not in url:
+                continue
+            value = parse_qs(urlparse(url).query).get("task_ids", [""])[0]
+            task_ids = [task_id.strip() for task_id in value.split(",")]
+            latest_task_ids = [task_id for task_id in task_ids if task_id]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return latest_task_ids
+
+
+def collect_task_groups_from_tabs(
+    driver: Any,
+    *,
+    timeout_per_tab: float = 4.0,
+) -> list[dict[str, object]]:
+    from selenium.webdriver.common.action_chains import ActionChains
+    from selenium.webdriver.common.by import By
+
+    selector = '[data-cy="EvaTabs_tabItem"]'
+    tab_specs: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, element in enumerate(driver.find_elements(By.CSS_SELECTOR, selector)):
+        if not element.is_displayed():
+            continue
+        label = str(element.text or "").strip()
+        data_id = str(element.get_attribute("data-id") or "")
+        key = data_id, label
+        if not label or key in seen:
+            continue
+        seen.add(key)
+        tab_specs.append(
+            {
+                "index": index,
+                "data_id": data_id,
+                "label": label,
+                "active": element.get_attribute("data-activated") == "true",
+            }
+        )
+
+    if not tab_specs:
+        return []
+
+    initial_active_task_ids = task_ids_from_performance_logs(
+        driver.get_log("performance")
+    )
+    ordered_specs = [spec for spec in tab_specs if not spec["active"]]
+    ordered_specs.extend(spec for spec in tab_specs if spec["active"])
+    captured_groups: list[dict[str, object]] = []
+
+    for spec in ordered_specs:
+        current_element = None
+        for element in driver.find_elements(By.CSS_SELECTOR, selector):
+            if not element.is_displayed():
+                continue
+            data_id = str(element.get_attribute("data-id") or "")
+            label = str(element.text or "").strip()
+            if data_id == spec["data_id"] and label == spec["label"]:
+                current_element = element
+                break
+        if current_element is None:
+            continue
+
+        driver.get_log("performance")
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center'});", current_element
+        )
+        try:
+            current_element.click()
+        except Exception:
+            ActionChains(driver).move_to_element(current_element).click().perform()
+
+        deadline = time.monotonic() + timeout_per_tab
+        task_ids: list[str] = []
+        while time.monotonic() < deadline:
+            task_ids = task_ids_from_performance_logs(
+                driver.get_log("performance")
+            )
+            if task_ids:
+                break
+            time.sleep(0.1)
+        if not task_ids and spec["active"]:
+            task_ids = initial_active_task_ids
+        if task_ids:
+            captured_groups.append(
+                {
+                    "index": spec["index"],
+                    "label": spec["label"],
+                    "task_ids": task_ids,
+                    "active": spec["active"],
+                }
+            )
+
+    captured_groups.sort(key=lambda group: int(group["index"]))
+    payload = {
+        "tab_count": len(tab_specs),
+        "groups": [
+            {key: value for key, value in group.items() if key != "index"}
+            for group in captured_groups
+        ],
+    }
+    return normalize_tab_task_groups(payload)
 
 
 def classify_sniff_payload(data: dict[str, Any]) -> tuple[SniffPayloadKind, Any]:
@@ -76,8 +227,11 @@ def start_browser_sniff(
     on_cookies: CookiesCallback | None = None,
     on_page_url: PageUrlCallback | None = None,
     on_page_html: PageHtmlCallback | None = None,
+    on_page_state: PageStateCallback | None = None,
+    on_task_groups: TaskGroupsCallback | None = None,
     browser_preference: str | None = None,
     finish_on_any: bool = False,
+    initial_url: str = "https://www.bilibili.com/",
     logger: logging.Logger | None = None,
 ) -> threading.Thread:
     logger = logger or logging.getLogger(__name__)
@@ -96,6 +250,8 @@ def start_browser_sniff(
             need_cookie = on_cookies is not None
             need_url = on_page_url is not None
             need_html = on_page_html is not None
+            need_state = on_page_state is not None
+            need_task_groups = on_task_groups is not None
             need_page = need_url or need_html
 
             net_captured: list[Any] = []
@@ -158,6 +314,9 @@ def start_browser_sniff(
                             need_page=need_page,
                         )
                         opts = webdriver.EdgeOptions()
+                        opts.set_capability(
+                            "goog:loggingPrefs", {"performance": "ALL"}
+                        )
                         browser_binary = find_browser_binary("edge")
                         if browser_binary:
                             opts.binary_location = browser_binary
@@ -174,6 +333,9 @@ def start_browser_sniff(
                             need_page=need_page,
                         )
                         opts = webdriver.ChromeOptions()
+                        opts.set_capability(
+                            "goog:loggingPrefs", {"performance": "ALL"}
+                        )
                         browser_binary = find_browser_binary("chrome")
                         if browser_binary:
                             opts.binary_location = browser_binary
@@ -200,14 +362,18 @@ def start_browser_sniff(
                     f"\n最后错误: {last_exc}"
                 )
 
-            driver.get("https://www.bilibili.com/")
+            driver.get(initial_url)
             logger.info("%s（浏览器: %s）", hint, browser_label(browser_type or ""))
 
             cookie_done = False
             net_done = False
             url_done = False
             html_done = False
+            state_done = False
+            task_groups_done = False
             html_attempts = 0
+            state_attempts = 0
+            task_group_attempts = 0
             last_cookie_count = 0
             for _ in range(120):
                 if need_cookie and not cookie_done and cookie_captured:
@@ -256,11 +422,75 @@ def start_browser_sniff(
                     if html_attempted and not html_done:
                         html_attempts += 1
 
+                if (
+                    need_task_groups
+                    and not task_groups_done
+                    and on_task_groups is not None
+                    and task_group_attempts < 3
+                ):
+                    try:
+                        cur_url = str(driver.current_url or "")
+                        room_id = extract_room_id_from_live_url(cur_url)
+                        if room_id is not None:
+                            task_groups = collect_task_groups_from_tabs(driver)
+                            task_group_attempts += 1
+                            if task_groups:
+                                task_groups_done = bool(
+                                    on_task_groups(task_groups, cur_url)
+                                )
+                    except Exception:
+                        task_group_attempts += 1
+                        logger.exception("页面任务标签回调失败")
+
+                if (
+                    need_state
+                    and not state_done
+                    and on_page_state is not None
+                    and (not need_task_groups or task_group_attempts >= 3)
+                ):
+                    try:
+                        cur_url = str(driver.current_url or "")
+                        room_id = extract_room_id_from_live_url(cur_url)
+                        if room_id is not None:
+                            page_state = driver.execute_script(
+                                "return window.__initialState || null;"
+                            )
+                            if isinstance(page_state, dict):
+                                state_done = bool(on_page_state(page_state, cur_url))
+                            state_attempts += 1
+                    except Exception:
+                        state_attempts += 1
+                        logger.exception("页面状态回调失败")
+
+                if (
+                    need_task_groups
+                    and not task_groups_done
+                    and task_group_attempts >= 3
+                    and on_task_groups is not None
+                ):
+                    try:
+                        cur_url = str(driver.current_url or "")
+                        page_state = driver.execute_script(
+                            "return window.__initialState || null;"
+                        )
+                        if isinstance(page_state, dict):
+                            fallback_groups = (
+                                extract_bili_live_task_groups_from_state(page_state)
+                            )
+                            if fallback_groups:
+                                task_groups_done = bool(
+                                    on_task_groups(fallback_groups, cur_url)
+                                )
+                    except Exception:
+                        logger.exception("页面任务分组兜底解析失败")
+
                 network_ready = (
-                    not need_html
+                    (not need_html and not need_state and not need_task_groups)
                     or not finish_on_any
                     or html_done
-                    or html_attempts >= 3
+                    or state_done
+                    or task_groups_done
+                    or max(html_attempts, state_attempts, task_group_attempts) >= 3
                 )
                 if (
                     need_net
@@ -285,6 +515,8 @@ def start_browser_sniff(
                         (need_net, net_done),
                         (need_url, url_done),
                         (need_html, html_done),
+                        (need_state, state_done),
+                        (need_task_groups, task_groups_done),
                     ),
                     finish_on_any=finish_on_any,
                 ):

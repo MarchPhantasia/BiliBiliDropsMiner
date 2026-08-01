@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -115,6 +117,27 @@ def create_macos_dmg(app_name: str) -> None:
     print(f"Done: {dmg_path}")
 
 
+def configure_macos_bundle(app_name: str, app_version: str) -> None:
+    app_path = Path("dist") / f"{app_name}.app"
+    info_plist_path = app_path / "Contents" / "Info.plist"
+    if not info_plist_path.is_file():
+        raise FileNotFoundError(f"macOS Info.plist not found: {info_plist_path}")
+
+    version_parts = re.findall(r"\d+", app_version)[:3]
+    bundle_version = ".".join(version_parts) if version_parts else "0.0.0"
+    with info_plist_path.open("rb") as source:
+        info_plist = plistlib.load(source)
+    info_plist["CFBundleShortVersionString"] = bundle_version
+    info_plist["CFBundleVersion"] = bundle_version
+    with info_plist_path.open("wb") as destination:
+        plistlib.dump(info_plist, destination, sort_keys=True)
+
+    subprocess.check_call(
+        ["codesign", "--force", "--deep", "--sign", "-", str(app_path)]
+    )
+    print(f"Configured macOS bundle version: {bundle_version}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build Bilibili Drops Miner with PyInstaller."
@@ -189,6 +212,8 @@ def main() -> None:
     gui_extra_args = common_extra_args + [
         "--collect-all",
         "selenium",
+        "--add-data",
+        f"chrome_extension{os.pathsep}chrome_extension",
     ]
 
     gui_app_name = "Bilibili Drops Miner"
@@ -203,6 +228,10 @@ def main() -> None:
             debug=args.debug,
             extra_args=gui_extra_args,
         )
+        if sys.platform == "darwin":
+            from bilibili_drops_miner._version import APP_VERSION
+
+            configure_macos_bundle(gui_app_name, APP_VERSION)
         if args.dmg:
             create_macos_dmg(gui_app_name)
 

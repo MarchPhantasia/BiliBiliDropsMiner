@@ -7,6 +7,14 @@ from typing import Any
 from PySide6.QtWidgets import QInputDialog, QMessageBox, QWidget
 
 from bilibili_drops_miner.gui_parts.browser_sniffer import start_browser_sniff
+from bilibili_drops_miner.gui_parts.chrome_companion import (
+    chrome_companion_is_available,
+    chrome_extension_directory,
+    chrome_extension_is_installed,
+    open_cookie_sync_page,
+    open_extension_setup,
+    register_native_messaging_host,
+)
 from bilibili_drops_miner.gui_parts.browser_utils import (
     available_browsers,
     browser_label,
@@ -15,9 +23,6 @@ from bilibili_drops_miner.gui_parts.browser_utils import (
     extract_room_id_from_live_url,
     find_browser,
 )
-from bilibili_drops_miner.utils import extract_bili_live_task_groups
-
-
 class BrowserActions:
     def __init__(
         self,
@@ -119,32 +124,34 @@ class BrowserActions:
             self._show_warning("提示", "未从当前直播页解析到掉宝任务分组")
             return
 
-        options = [
-            f"{str(group.get('label') or '任务组')} ({len(group.get('task_ids') or [])} 个任务)"
-            for group in task_groups
-        ]
         default_index = 0
         for index, group in enumerate(task_groups):
             if bool(group.get("active")):
                 default_index = index
                 break
 
-        selected_option, ok = QInputDialog.getItem(
-            self._parent,
-            "选择掉宝任务组",
-            "检测到多个按日期分组的掉宝任务，请选择要填入的一组：",
-            options,
-            default_index,
-            False,
-        )
-        if not ok:
-            self._logger.info("用户取消了掉宝任务组选择")
-            return
+        selected_index = default_index
+        if len(task_groups) > 1:
+            options = [
+                f"{str(group.get('label') or '任务组')} ({len(group.get('task_ids') or [])} 个任务)"
+                for group in task_groups
+            ]
+            selected_option, ok = QInputDialog.getItem(
+                self._parent,
+                "选择掉宝任务组",
+                "检测到多个按日期分组的掉宝任务，请选择要填入的一组：",
+                options,
+                default_index,
+                False,
+            )
+            if not ok:
+                self._logger.info("用户取消了掉宝任务组选择")
+                return
 
-        try:
-            selected_index = options.index(selected_option)
-        except ValueError:
-            selected_index = default_index
+            try:
+                selected_index = options.index(selected_option)
+            except ValueError:
+                selected_index = default_index
 
         selected_group = task_groups[selected_index]
         task_ids = [
@@ -171,8 +178,11 @@ class BrowserActions:
         on_cookies: Callable[[list[dict[str, Any]]], None] | None = None,
         on_page_url: Callable[[int], None] | None = None,
         on_page_html: Callable[[str, str], bool] | None = None,
+        on_page_state: Callable[[dict[str, Any], str], bool] | None = None,
+        on_task_groups: Callable[[list[dict[str, object]], str], bool] | None = None,
         browser_preference: str | None = None,
         finish_on_any: bool = False,
+        initial_url: str = "https://www.bilibili.com/",
     ) -> None:
         def on_error(title: str, message: str) -> None:
             self._post_ui_task(self._show_error, title, message)
@@ -185,8 +195,11 @@ class BrowserActions:
             on_cookies=on_cookies,
             on_page_url=on_page_url,
             on_page_html=on_page_html,
+            on_page_state=on_page_state,
+            on_task_groups=on_task_groups,
             browser_preference=browser_preference,
             finish_on_any=finish_on_any,
+            initial_url=initial_url,
             logger=self._logger,
         )
 
@@ -218,14 +231,13 @@ class BrowserActions:
             browser_preference=browser,
         )
 
-    def auto_fetch_task_ids(self) -> None:
+    def auto_fetch_task_ids(self, room_id: int) -> None:
         ok = QMessageBox.question(
             self._parent,
             "无需登录，自动获取任务ID",
             "支持 Chrome / Edge，将优先使用系统默认浏览器。<br><br>"
-            "点击确定后选择浏览器，并在 2 分钟内：<br><br>"
-            "打开有当前任务的直播间即可自动获取任务ID和房间号，<br>"
-            "或手动点击页面上的「刷新任务」按钮。<br><br>"
+            f"点击确定后将打开直播间 {room_id}，自动获取任务 ID。<br><br>"
+            "若检测到多个任务组，将提示选择要使用的一组。<br><br>"
             "捕获成功后浏览器会自动关闭。",
             QMessageBox.Ok | QMessageBox.Cancel,
         )
@@ -236,9 +248,10 @@ class BrowserActions:
         if browser is None:
             return
 
-        def on_page_html(page_html: str, page_url: str) -> bool:
+        def on_task_groups(
+            task_groups: list[dict[str, object]], page_url: str
+        ) -> bool:
             room_id = extract_room_id_from_live_url(page_url)
-            task_groups = extract_bili_live_task_groups(page_html)
             if not task_groups:
                 return False
             self._post_ui_task(self.apply_selected_task_group, room_id, task_groups)
@@ -272,14 +285,15 @@ class BrowserActions:
 
         self.browser_sniff(
             "/x/task/totalv2",
-            "已打开浏览器，请打开有当前任务的直播间并等待页面加载完成",
+            f"已打开直播间 {room_id}，正在获取任务 ID",
             on_network_match=on_match,
-            on_page_html=on_page_html,
+            on_task_groups=on_task_groups,
             browser_preference=browser,
             finish_on_any=True,
+            initial_url=f"https://live.bilibili.com/{room_id}",
         )
 
-    def auto_fetch_cookie(self) -> None:
+    def _auto_fetch_cookie_with_temporary_browser(self) -> None:
         ok = QMessageBox.question(
             self._parent,
             "自动获取Cookie",
@@ -318,3 +332,60 @@ class BrowserActions:
             on_cookies=on_cookies,
             browser_preference=browser,
         )
+
+    def _sync_cookie_from_current_chrome(self) -> None:
+        register_native_messaging_host()
+        open_cookie_sync_page()
+        self._logger.info("已请求当前 Chrome Profile 同步 Bilibili Cookie")
+
+    def auto_fetch_cookie(self) -> None:
+        if not chrome_companion_is_available():
+            self._auto_fetch_cookie_with_temporary_browser()
+            return
+
+        try:
+            register_native_messaging_host()
+        except Exception as exc:
+            self._logger.exception("注册 Chrome Native Messaging host 失败")
+            self._show_warning(
+                "Chrome 配套扩展不可用",
+                f"无法注册本机 Cookie 接收端，将使用临时浏览器。\n\n{exc}",
+            )
+            self._auto_fetch_cookie_with_temporary_browser()
+            return
+
+        if chrome_extension_is_installed():
+            open_cookie_sync_page()
+            self._logger.info("已请求当前 Chrome Profile 同步 Bilibili Cookie")
+            return
+
+        extension_dir = chrome_extension_directory()
+        msg = QMessageBox(self._parent)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("安装 Chrome 配套扩展")
+        msg.setText(
+            "首次使用需要将配套扩展安装到当前 Chrome Profile。\n\n"
+            f"扩展目录：{extension_dir}"
+        )
+        setup_btn = msg.addButton("打开安装页", QMessageBox.AcceptRole)
+        sync_btn = msg.addButton("已经安装，立即同步", QMessageBox.ActionRole)
+        fallback_btn = msg.addButton("使用临时浏览器", QMessageBox.ActionRole)
+        cancel_btn = msg.addButton("取消", QMessageBox.RejectRole)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if clicked == setup_btn:
+            open_extension_setup()
+            QMessageBox.information(
+                self._parent,
+                "安装 Chrome 配套扩展",
+                "请在扩展管理页开启开发者模式，点击“加载已解压的扩展程序”，"
+                "然后选择 Finder 已定位的 chrome_extension 文件夹。\n\n"
+                "安装完成后再次点击 Cookie 右侧的自动获取。",
+            )
+        elif clicked == sync_btn:
+            self._sync_cookie_from_current_chrome()
+        elif clicked == fallback_btn:
+            self._auto_fetch_cookie_with_temporary_browser()
+        elif clicked == cancel_btn:
+            return

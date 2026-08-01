@@ -85,7 +85,7 @@ def _extract_json_object_after_marker(raw: str, marker: str) -> dict:
 
 
 def _task_group_position(position_boxes: list, index: int) -> tuple[float, float] | None:
-    if index >= len(position_boxes):
+    if index < 0 or index >= len(position_boxes):
         return None
     position_box = position_boxes[index]
     if not isinstance(position_box, dict):
@@ -153,12 +153,9 @@ def _extract_task_ids_from_task_group(task_group: dict, seen: set[str]) -> list[
     return task_ids
 
 
-def extract_bili_live_task_groups(page_html: str) -> list[dict[str, object]]:
-    try:
-        state = _extract_json_object_after_marker(page_html, "window.__initialState =")
-    except (ValueError, json.JSONDecodeError):
-        return []
-
+def extract_bili_live_task_groups_from_state(
+    state: dict,
+) -> list[dict[str, object]]:
     task_groups = state.get("EraTasklistPc") or []
     position_boxes = state.get("EvaPositionBox") or []
     panels = state.get("EvaTabs.Panel") or []
@@ -229,6 +226,14 @@ def extract_bili_live_task_groups(page_html: str) -> list[dict[str, object]]:
         )
 
     return groups
+
+
+def extract_bili_live_task_groups(page_html: str) -> list[dict[str, object]]:
+    try:
+        state = _extract_json_object_after_marker(page_html, "window.__initialState =")
+    except (ValueError, json.JSONDecodeError):
+        return []
+    return extract_bili_live_task_groups_from_state(state)
 
 
 def parse_cookie(cookie_text: str) -> dict[str, str]:

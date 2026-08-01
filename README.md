@@ -1,251 +1,145 @@
-# Bilibili 直播掉宝助手
+# Bilibili Drops Miner macOS
 
-轻量、直接的 B 站直播掉宝/观看时长任务挂机工具。  
-支持 GUI 与 CLI 双模式，支持多房间、多会话并行与任务进度追踪。
+这是 [mi0e/BiliBiliDropsMiner](https://github.com/mi0e/BiliBiliDropsMiner) 的 macOS 增强 fork。它保留多房间、多会话、任务进度和通知能力，并补充了 Cookie 持久化、当前 Chrome 账号同步，以及从直播间自动解析任务 ID 的完整流程。
 
-- [Release 下载](https://github.com/mi0e/BiliBiliDropsMiner/releases/latest)
-- [国内下载（密码 1234）](https://wwaqd.lanzoum.com/b019vsjd5i)
+- [下载最新 Release](https://github.com/MarchPhantasia/BiliBiliDropsMiner/releases/latest)
+- [上游项目](https://github.com/mi0e/BiliBiliDropsMiner)
 
-## 🎈 界面预览
+## 本 fork 的改动
 
-<details>
-<summary>点击展开 GUI 截图</summary>
+- GUI 自动保存最后一次输入或同步成功的 Cookie，重启后自动恢复。
+- 提供 Chrome 配套扩展，从当前 Chrome Profile 读取已登录的 Bilibili Cookie，无需在临时浏览器中重复登录。
+- 输入直播间号后按 Enter，或点击任务 ID 右侧的自动获取，即可打开直播间并解析任务 ID。
+- 自动点击页面中可见的 DAY 任务标签，并监听真实的 `/x/task/totalv2` 请求。
+- 检测到多个日期任务组时弹出选择框；同一日期存在多个任务时自动用逗号合并。
+- 保留临时 Chrome / Edge 自动登录流程作为 Cookie 获取的后备方案。
 
-![GUI 截图](img/image_5.png)
+## macOS 快速开始
 
-</details>
+1. 从 [Releases](https://github.com/MarchPhantasia/BiliBiliDropsMiner/releases/latest) 下载 DMG。
+2. 打开 DMG，将 `Bilibili Drops Miner.app` 拖入 `Applications`。
+3. 首次启动如被 Gatekeeper 拦截，在 Finder 中右键应用并选择“打开”。
+4. 填写 Cookie 和直播间号，按 Enter 自动获取任务 ID，然后点击“启动”。
 
-## 🛠️ 功能
+发布包目前使用 ad-hoc 签名，未做 Apple notarization。只应从本仓库 Release 下载，并先核对 Release 中提供的 SHA-256。
 
-- 多房间并发挂机，支持每房间多会话连接
-- 任务进度自动轮询 + 手动刷新
-- 支持 Gotify、Server 酱通知
-- GUI 支持配置保存/加载、日志查看、自动获取 Cookie 与任务 ID
+## 使用当前 Chrome 账号
 
-## ⚠️ 免责声明
+macOS 应用内置一个 Manifest V3 配套扩展。首次点击 Cookie 右侧的“自动获取”时：
 
-> [!IMPORTANT]
-> **Disclaimer / 免责声明**
-> - 本项目仅供个人学习研究，不保证稳定性，不提供技术支持
-> - 使用本项目产生的一切后果由用户自行承担
-> - 禁止商业用途，请遵守版权及平台规定
-> - This project is for **personal learning and research purposes only**
-> - No stability guarantee or technical support provided
-> - Users are solely responsible for any consequences of using this project
-> - Commercial use is strictly prohibited
-> - Please respect copyright and platform ToS
+1. 在自动打开的 `chrome://extensions/` 页面开启“开发者模式”。
+2. 点击“加载已解压的扩展程序”。
+3. 选择应用内的扩展目录：
 
-## 🔍 参数获取指南
+   ```text
+   /Applications/Bilibili Drops Miner.app/Contents/Resources/chrome_extension
+   ```
 
-### Cookie（必填）
+4. 回到应用，再次点击 Cookie 的“自动获取”。
 
-方式 1（推荐）：GUI 中点击“自动获取”，在弹出的浏览器中登录 B 站。  
-方式 2（手动）：登录 B 站后 F12 打开开发者工具复制 Cookie，必需包含 `SESSDATA` 和 `bili_jct`，具体方法自行查询。
+扩展安装后的固定 ID 为 `illpcmbmojgliojnfhleklbdonlhmhfc`。也可以点击 Chrome 工具栏中的扩展图标手动同步。
 
-### 房间号（必填）
+扩展只申请：
 
-方式 1（推荐）：点击自动获取任务 ID 后进入直播间，房间号会自动回填。  
-方式 2（手动）：直播间 URL 中的数字部分即为房间号，例如 `https://live.bilibili.com/23612045` 中房间号为 `23612045`。
+- `cookies`：读取 `.bilibili.com` 下白名单中的登录 Cookie。
+- `nativeMessaging`：把 Cookie 发送给本机的 Bilibili Drops Miner。
+- `https://*.bilibili.com/*`：限制站点访问范围。
 
+本机接收端只接受这个固定扩展 ID，并只保存 `SESSDATA`、`bili_jct`、`DedeUserID` 等必要字段。Cookie 通过 Qt `QSettings` 保存在当前 macOS 用户配置中，属于本机明文持久化，不是 Keychain 加密存储。不要共享配置文件、Cookie 或包含 Cookie 的截图。
 
-### 任务 ID（可选）
+## 自动获取任务 ID
 
-方式 1（推荐）：GUI 中点击“自动获取”，进入活动直播间后自动回填。  
-方式 2（手动）：在任务接口请求中提取 task_ids 参数。
-
-典型请求示例：
+在“房间号”中输入直播间 URL 末尾的数字，例如 `23612045`，然后按 Enter。程序会用一个独立的 Chrome / Edge 会话打开：
 
 ```text
-https://api.bilibili.com/x/task/totalv2?csrf=xxx&task_ids=taskId1,taskId2
+https://live.bilibili.com/23612045
 ```
 
-格式为逗号分隔的字符串，例如 `taskId1,taskId2`。
+程序会依次点击直播页的 DAY 标签，从网络日志中的 `totalv2` 请求读取当前标签对应的 `task_ids`。若页面没有生成请求，则回退解析 `window.__initialState.EraTasklistPc`。
 
-### 通知推送（可选）
+- 多个 DAY：弹出任务组选择框。
+- 同一 DAY 多个任务：写入逗号分隔的多个 ID。
+- 未检测到任务：确认该直播间当前存在掉宝活动后重试。
 
-常见格式：
+`totalv2` 是已知任务 ID 的进度查询接口；任务 ID 本身来自直播活动页面的数据和标签交互，而不是通过房间号直接查询 `totalv2` 得到。
 
-- Gotify: `gotify://host/token`
-- Server 酱: `schan://SendKey`
+## 其他功能
 
-多个通知地址可用逗号分隔。
+- 多房间并发挂机，每个房间可配置多个会话。
+- 任务进度自动轮询和手动刷新。
+- Gotify、Server 酱通知。
+- GUI 配置导入/导出、运行日志和任务完成提醒。
+- CLI 模式，适合服务器或纯命令行环境。
 
-## 🤔 常见问题
+## 源码运行
 
-### Q：为什么任务时长一直为 0？
+需要 Python 3.10 或更高版本：
 
-任务时长不是实时结算的。任务刚启动后，通常需要至少等待 **30 秒**，系统才会同步并更新时长。
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python bilibili_gui.py
+```
 
-如果等待后任务时长仍一直为 0，或出现「预估时长不为 0，但任务时长仍为 0」的情况，可能是账号存在风控限制。建议先停止工具，并手动打开目标直播间，观察任务时长是否会正常增加。
+CLI 示例：
 
----
+```bash
+python bilibili.py \
+  --cookie "SESSDATA=xxx; bili_jct=xxx" \
+  --rooms "23612045" \
+  --task-ids "taskId1,taskId2"
+```
 
-### Q：为什么预估时长和任务实际时长不一致？
+查看全部参数：
 
-可能是平台风控、直播/任务系统非实时结算或两者统计口径不同导致。
+```bash
+python bilibili.py --help
+```
 
-任务进度以任务接口返回为准；界面中的预估观看时长只能作为最大值参考，不保证等同于活动任务最终认可的有效时长。
+## 构建 macOS 应用
 
----
-
-### Q：为什么点击“自动获取”后没有拉起浏览器？
-
-“自动获取”功能仅支持拉起典型安装路径下的 Chrome / Edge 浏览器。
-
-如果浏览器安装在自定义路径，可能无法被自动识别或启动。
-
----
-
-### Q：为什么首次使用“自动获取”会比较慢？
-
-Selenium Manager 会自动下载缺失的浏览器驱动。
-
-首次使用“自动获取”功能时，可能因下载驱动而耗时较久；若网络异常，也可能导致下载失败，进而无法启动浏览器。
-
----
-
-### Q：线程数是不是越高越好？
-
-**不是**。
-
-线程数过高，或频繁开启 / 关闭任务，可能触发平台风控，导致请求受限或任务失败。
-
-受个人网络环境差异及 B 站流控规则影响，加速效果存在软上限，建议根据实际情况调整线程数，推荐 **60~80** 线程。
-
----
-
-### Q：风控了怎么办？
-
-由于不同账号的账号状态和风控情况存在差异，建议先将账号静置 **30 分钟以上**，然后适当减少线程数后再重试。
-
-如果仍无法正常增加任务时长，可优先使用官方直播间进行观看。
-
-## 🚀 快速开始
-
-### Windows / Linux / macOS 源码运行
-
-1. 安装 Python 3.10+
-2. 克隆项目并安装依赖
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. 启动 GUI
-   ```bash
-   python bilibili_gui.py
-   ```
-
-macOS 上的 GUI 与 Windows 共用同一套界面和功能，支持 Chrome / Edge 自动获取 Cookie、房间号和任务 ID。
-
-### macOS 双击应用
-
-在 Apple Silicon 或 Intel Mac 上用对应架构的 Python 执行：
+在目标架构的 Mac 上安装依赖后执行：
 
 ```bash
 python build.py --target gui --clean --dmg
 ```
 
-生成的产物：
+产物位于：
 
-- `dist/Bilibili Drops Miner.app`：可直接双击运行
-- `dist/Bilibili Drops Miner-macOS.dmg`：可分发的磁盘镜像
+```text
+dist/Bilibili Drops Miner.app
+dist/Bilibili Drops Miner-macOS.dmg
+```
 
-本地构建会由 PyInstaller 进行 ad-hoc 签名。如果要向其他用户公开发布，还应使用 Apple Developer ID 签名并完成 notarization。
+PyInstaller 会将 Selenium、Chrome 配套扩展和 Native Messaging 接收端一起打入 `.app`。在 Apple Silicon Mac 上构建的是 arm64 产物；Intel 版本需要在 x86_64 Python 环境构建。
 
-### CLI
-
-GUI 和 CLI 可以并存。服务器或纯命令行环境可使用：
+## 测试
 
 ```bash
-python bilibili.py --cookie "SESSDATA=xxx; bili_jct=xxx" --rooms "23612045"
+python -m unittest discover -s tests -v
 ```
 
-## 📜 使用文档
+测试覆盖 Cookie 持久化、Chrome 配套扩展、Native Messaging、直播页任务分组解析、GUI 状态和既有任务逻辑。
 
-### GUI（推荐）
+## 常见问题
 
-```bash
-python bilibili_gui.py
-```
+### 为什么 Cookie 自动获取仍然打开了新浏览器？
 
-填入 Cookie、房间号、任务 ID 后点击“启动”。
+当前 Chrome Profile 同步仅用于已安装的 macOS `.app` 和 Google Chrome。源码运行、未安装配套扩展、使用 Edge，或 Native Messaging 注册失败时，会自动回退到临时浏览器流程。
 
-你也可以在 GUI 中直接使用：
+### 为什么任务时长一直为 0？
 
-- Cookie 自动获取（浏览器登录后自动回填）
-- 任务 ID 自动获取（抓取任务接口并自动回填）
-- 房间号自动获取
-- 启动 / 停止掉宝、任务进度刷新与奖励领取
-- Gotify / Server 酱通知与详细日志
-- 配置文件保存/加载（JSON）
+平台任务进度不是实时结算的，启动后通常要等待至少 30 秒。若预估观看时长增长但接口进度长期不变，可能是账号风控或活动状态变化，应先停止工具并在官方直播页验证。
 
-### CLI
+### 线程数是否越高越好？
 
-- 获取命令帮助：`python bilibili.py --help`
+不是。过高的并发或频繁启停会增加请求失败和账号风控风险。请从较小值开始，根据网络与任务进度逐步调整。
 
-```shell
-Bilibili Drops Miner
+## 免责声明
 
-Usage: python bilibili.py [OPTIONS]
+本项目仅供个人学习和研究，不保证稳定性或任务结果。请遵守 Bilibili 服务条款、活动规则和所在地法律法规；使用本项目产生的后果由使用者承担，禁止商业用途。
 
-Options:
-   --cookie COOKIE                        		B站登录 Cookie
-   --rooms ROOMS                          		房间号，逗号分隔
-   --threads THREADS                      		每房间会话数（可加速任务进度）
-   --reconnect-delay RECONNECT_DELAY      		断线重连延迟（秒）
-   --disable-web-heartbeat                		关闭 x25Kn 业务心跳
-   --task-ids TASK_IDS                    		用于进度监控的任务 ID
-   --task-interval TASK_INTERVAL          		任务查询间隔（秒）
-   --notify-urls NOTIFY_URLS              		通知 URL，逗号分隔
-   --disable-task-notify                  		关闭任务完成通知	
-   -h, --help                             		显示此帮助信息并退出
-```
+## License 与致谢
 
-示例：
-
-```bash
-python bilibili.py \
-   --cookie "SESSDATA=xxx; bili_jct=xxx" \
-   --rooms "23612045,1017" \
-   --threads 2 \
-   --task-ids "taskId1,taskId2" \
-   --notify-urls "gotify://host/token" \
-   -v
-```
-
-## 📦 打包
-
-```bash
-python build.py               # 开发模式
-python build.py --target gui  # PyInstaller 打包当前平台 GUI
-python build.py --target cli  # PyInstaller 打包 CLI
-python build.py --target gui --dmg  # macOS 额外生成 DMG
-python build_nuitka.py --target gui  # Nuitka 打包当前平台 GUI
-```
-
-## 🧩 配置文件
-
-GUI 支持保存/加载 JSON 配置文件，格式可参考 config.example.json。
-
-
-## 🧑‍💻 开发
-
-安装开发依赖：
-
-```bash
-pip install -r requirements.txt
-```
-
-本地调试：
-
-- GUI: `python bilibili_gui.py`
-- CLI: `python bilibili.py --help`
-
-## ⭐ Stars
-
-如果这个项目对你有帮助，欢迎点一个 Star。
-
-## 📄 License
-
-MIT
-
-## 🥰 通过[爱发电](https://afdian.com/a/eriiiii)赞助
+本 fork 基于 [mi0e/BiliBiliDropsMiner](https://github.com/mi0e/BiliBiliDropsMiner)，保留上游项目的作者归属。上游 README 将项目标注为 MIT，请同时查阅上游仓库的许可说明。

@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Bilibili Drops Miner Cookie Bridge",
+  "description": "Import the current Chrome profile's Bilibili login cookie into Bilibili Drops Miner.",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo1T0FD41GUlUkj8QHrMtxg+LRaKzUezoMdvIVx4Y2M3XS4muf4N8HXLdiZ1UYdd/+jotd7aN0dii3EmWlXtKQg3MgIA08JN728D7Vc3z8O0tmkDkvsRmu+WsbQXFkblYMs7+rRFhiaWNIfeKwh1Le69r+Jgxf85++LSMxOtOMAxR79EAtxzoWO8FzCsKmzAjW5z7WNOprtnvggHkqYZLtRYjA4TxtronXkalMWiR1FcrRyVpjg3bZnlLuOKBoAyz7IJD7L6XAwoGZsyx3tpJPhwvmWeVdHpxRxdw6U3tsu/NiMXq30zz60YHspZhgukCahyeL/5MKg/dK/9Dqs0XEwIDAQAB",
+  "permissions": [
+    "cookies",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "https://*.bilibili.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "同步 Bilibili Cookie",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

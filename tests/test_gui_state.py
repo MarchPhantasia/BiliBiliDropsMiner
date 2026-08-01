@@ -7,7 +7,9 @@ from pathlib import Path
 from PySide6.QtCore import QByteArray, QSettings
 
 from bilibili_drops_miner.gui_parts.gui_state import (
+    COOKIE_IMPORT_REVISION_KEY,
     LAST_CONFIG_PATH_KEY,
+    SAVED_COOKIE_KEY,
     WINDOW_GEOMETRY_KEY,
     GuiStateStore,
 )
@@ -51,6 +53,41 @@ class GuiStateStoreTests(unittest.TestCase):
 
             self.assertIsNone(state.last_config_path())
             self.assertNotIn(LAST_CONFIG_PATH_KEY, settings.allKeys())
+
+    def test_saved_cookie_round_trip_and_clear(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = QSettings(
+                str(Path(temp_dir) / "gui.ini"),
+                QSettings.IniFormat,
+            )
+            state = GuiStateStore(settings)
+
+            state.set_saved_cookie("  SESSDATA=sess; bili_jct=csrf  ")
+            state.sync()
+
+            self.assertEqual(state.saved_cookie(), "SESSDATA=sess; bili_jct=csrf")
+            self.assertIn(SAVED_COOKIE_KEY, settings.allKeys())
+
+            state.set_saved_cookie("")
+            state.sync()
+
+            self.assertEqual(state.saved_cookie(), "")
+            self.assertNotIn(SAVED_COOKIE_KEY, settings.allKeys())
+
+    def test_cookie_import_revision_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = QSettings(
+                str(Path(temp_dir) / "gui.ini"),
+                QSettings.IniFormat,
+            )
+            state = GuiStateStore(settings)
+
+            revision = state.mark_cookie_imported("revision-1")
+            state.sync()
+
+            self.assertEqual(revision, "revision-1")
+            self.assertEqual(state.cookie_import_revision(), "revision-1")
+            self.assertIn(COOKIE_IMPORT_REVISION_KEY, settings.allKeys())
 
     def test_only_expected_gui_state_keys_are_written(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -10,6 +10,7 @@ on:
       - 'build_nuitka.py'
       - 'bilibili_gui.py'
       - 'bilibili_drops_miner/**'
+      - 'chrome_extension/**'
       - '!bilibili_drops_miner/cli.py'
       - 'img/app.ico'
       - 'img/app.icns'
@@ -68,9 +69,9 @@ jobs:
           @"
           APP_VERSION = "${{ needs.prepare.outputs.version }}"
           UPDATE_CHANNEL = "${{ needs.prepare.outputs.update_channel }}"
-          REPOSITORY_URL = "https://github.com/mi0e/BiliBiliDropsMiner"
-          LATEST_RELEASE_API = "https://api.github.com/repos/mi0e/BiliBiliDropsMiner/releases/latest"
-          RELEASES_URL = "https://github.com/mi0e/BiliBiliDropsMiner/releases/latest"
+          REPOSITORY_URL = "https://github.com/MarchPhantasia/BiliBiliDropsMiner"
+          LATEST_RELEASE_API = "https://api.github.com/repos/MarchPhantasia/BiliBiliDropsMiner/releases/latest"
+          RELEASES_URL = "https://github.com/MarchPhantasia/BiliBiliDropsMiner/releases/latest"
           "@ | Set-Content -Path "bilibili_drops_miner/_version.py" -Encoding UTF8
 
       - uses: actions/setup-python@v5
@@ -125,9 +126,9 @@ jobs:
           cat > bilibili_drops_miner/_version.py <<EOF
           APP_VERSION = "${{ needs.prepare.outputs.version }}"
           UPDATE_CHANNEL = "${{ needs.prepare.outputs.update_channel }}"
-          REPOSITORY_URL = "https://github.com/mi0e/BiliBiliDropsMiner"
-          LATEST_RELEASE_API = "https://api.github.com/repos/mi0e/BiliBiliDropsMiner/releases/latest"
-          RELEASES_URL = "https://github.com/mi0e/BiliBiliDropsMiner/releases/latest"
+          REPOSITORY_URL = "https://github.com/MarchPhantasia/BiliBiliDropsMiner"
+          LATEST_RELEASE_API = "https://api.github.com/repos/MarchPhantasia/BiliBiliDropsMiner/releases/latest"
+          RELEASES_URL = "https://github.com/MarchPhantasia/BiliBiliDropsMiner/releases/latest"
           EOF
 
       - uses: actions/setup-python@v5
