@@ -78,6 +78,43 @@ class GuiPersistenceTests(unittest.TestCase):
             finally:
                 second.close()
 
+    def test_log_toggle_does_not_resize_the_window(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            window = MinerGUI(gui_state=self._state_for(temp_dir))
+            try:
+                window.show()
+                self.app.processEvents()
+                original_size = window.size()
+
+                window._log_toggle_btn.click()
+                self.app.processEvents()
+                self.assertTrue(window.log_text.isVisible())
+                self.assertEqual(window.size(), original_size)
+
+                window._log_toggle_btn.click()
+                self.app.processEvents()
+                self.assertFalse(window.log_text.isVisible())
+                self.assertEqual(window.size(), original_size)
+            finally:
+                window.close()
+
+    def test_window_has_stable_minimum_width_for_action_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            window = MinerGUI(gui_state=self._state_for(temp_dir))
+            try:
+                self.assertGreaterEqual(window.minimumWidth(), 940)
+                self.assertGreaterEqual(window.minimumHeight(), 760)
+                window.resize(window.minimumSize())
+                window.show()
+                window._log_toggle_btn.click()
+                self.app.processEvents()
+                self.assertLessEqual(
+                    window.centralWidget().layout().minimumSize().height(),
+                    window.centralWidget().height(),
+                )
+            finally:
+                window.close()
+
     def test_startup_auto_loads_last_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.json"

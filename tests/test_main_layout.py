@@ -62,7 +62,7 @@ class MainLayoutTest(unittest.TestCase):
         self.assertEqual(widgets.task_interval_edit.text(), "30")
         self.assertEqual(widgets.verbose_check.text(), "详细日志")
         self.assertEqual(widgets.disable_task_notify_check.text(), "禁用任务完成通知")
-        self.assertFalse(widgets.progress_bar.isVisible())
+        self.assertFalse(widgets.progress_bar.isHidden())
         self.assertEqual(widgets.progress_bar.minimum(), 0)
         self.assertEqual(widgets.progress_bar.maximum(), 1)
         self.assertEqual(widgets.task_text.toPlainText(), "点击“手动刷新”查看任务进度")

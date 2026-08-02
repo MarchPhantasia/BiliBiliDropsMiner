@@ -72,10 +72,8 @@ class MinerGUI(QMainWindow):
         super().__init__()
         self._gui_state = gui_state if gui_state is not None else GuiStateStore()
         self.setWindowTitle(f"Bilibili 直播掉宝助手 {APP_VERSION}")
-        self.resize(1040, 760)
-        self.setMinimumSize(860, 620)
-        self._size_expanded = (1040, 920)
-        self._size_collapsed = (1040, 760)
+        self.resize(1060, 820)
+        self.setMinimumSize(940, 760)
 
         self.log_queue: "queue.Queue[str]" = queue.Queue()
         self.worker_controller = WorkerController(auto_force_stop_after_seconds=2.0)
@@ -417,7 +415,6 @@ class MinerGUI(QMainWindow):
     def _stop_progress_animation(self) -> None:
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(False)
 
     # ---------- log / layout toggle ----------
 
@@ -425,11 +422,9 @@ class MinerGUI(QMainWindow):
         if self._log_expanded:
             self.log_text.setVisible(False)
             self._log_toggle_btn.setText("▶ 运行日志")
-            self.resize(self.width(), self._size_collapsed[1])
         else:
             self.log_text.setVisible(True)
             self._log_toggle_btn.setText("▼ 运行日志")
-            self.resize(self.width(), self._size_expanded[1])
         self._log_expanded = not self._log_expanded
 
     def clear_logs(self) -> None:
