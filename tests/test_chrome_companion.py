@@ -63,6 +63,76 @@ class ChromeCompanionTests(unittest.TestCase):
 
             self.assertTrue(chrome_extension_is_installed(profile_root))
 
+    def test_extension_detection_uses_last_used_profile_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile_root = Path(temp_dir)
+            default_profile = profile_root / "Default"
+            active_profile = profile_root / "Profile 1"
+            default_profile.mkdir()
+            active_profile.mkdir()
+            profile_root.joinpath("Local State").write_text(
+                json.dumps({"profile": {"last_used": "Profile 1"}}),
+                encoding="utf-8",
+            )
+            default_profile.joinpath("Secure Preferences").write_text(
+                json.dumps(
+                    {
+                        "extensions": {
+                            "settings": {CHROME_EXTENSION_ID: {"state": 1}}
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            active_profile.joinpath("Secure Preferences").write_text(
+                json.dumps({"extensions": {"settings": {}}}),
+                encoding="utf-8",
+            )
+
+            self.assertFalse(chrome_extension_is_installed(profile_root))
+
+    def test_extension_detection_ignores_stale_preferences_after_uninstall(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile_root = Path(temp_dir)
+            profile = profile_root / "Default"
+            profile.mkdir()
+            profile.joinpath("Secure Preferences").write_text(
+                json.dumps({"extensions": {"settings": {}}}),
+                encoding="utf-8",
+            )
+            profile.joinpath("Preferences").write_text(
+                json.dumps(
+                    {
+                        "extensions": {
+                            "settings": {CHROME_EXTENSION_ID: {"state": 1}}
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertFalse(chrome_extension_is_installed(profile_root))
+
+    def test_extension_detection_requires_enabled_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            profile_root = Path(temp_dir)
+            profile = profile_root / "Default"
+            profile.mkdir()
+            profile.joinpath("Secure Preferences").write_text(
+                json.dumps(
+                    {
+                        "extensions": {
+                            "settings": {CHROME_EXTENSION_ID: {"state": 0}}
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertFalse(chrome_extension_is_installed(profile_root))
+
 
 if __name__ == "__main__":
     unittest.main()

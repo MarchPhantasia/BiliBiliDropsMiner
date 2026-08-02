@@ -68,16 +68,41 @@ def register_native_messaging_host(
     return destination
 
 
-def _chrome_profile_preference_files(profile_root: Path) -> list[Path]:
-    paths: list[Path] = []
-    for profile_dir in profile_root.iterdir() if profile_root.is_dir() else ():
-        if not profile_dir.is_dir():
-            continue
-        for filename in ("Secure Preferences", "Preferences"):
-            path = profile_dir / filename
-            if path.is_file():
-                paths.append(path)
-    return paths
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _current_chrome_profile_directory(profile_root: Path) -> Path | None:
+    local_state = _read_json_object(profile_root / "Local State") or {}
+    profile_state = local_state.get("profile")
+    last_used = (
+        str(profile_state.get("last_used") or "").strip()
+        if isinstance(profile_state, dict)
+        else ""
+    )
+    if last_used and Path(last_used).name == last_used:
+        profile_dir = profile_root / last_used
+        if profile_dir.is_dir():
+            return profile_dir
+
+    default_profile = profile_root / "Default"
+    if default_profile.is_dir():
+        return default_profile
+    return None
+
+
+def _chrome_profile_preferences(profile_dir: Path) -> Path | None:
+    # Chrome's extension registry lives in Secure Preferences. Preferences is
+    # only a compatibility fallback when the secure file does not exist.
+    for filename in ("Secure Preferences", "Preferences"):
+        path = profile_dir / filename
+        if path.is_file():
+            return path
+    return None
 
 
 def chrome_extension_is_installed(profile_root: Path | None = None) -> bool:
@@ -88,16 +113,20 @@ def chrome_extension_is_installed(profile_root: Path | None = None) -> bool:
         / "Google"
         / "Chrome"
     )
-    for preferences_path in _chrome_profile_preference_files(root):
-        try:
-            preferences = json.loads(preferences_path.read_text(encoding="utf-8"))
-            settings = (preferences.get("extensions") or {}).get("settings") or {}
-            extension = settings.get(CHROME_EXTENSION_ID)
-            if isinstance(extension, dict) and extension.get("state", 1) != 0:
-                return True
-        except (OSError, ValueError, TypeError):
-            continue
-    return False
+    profile_dir = _current_chrome_profile_directory(root)
+    if profile_dir is None:
+        return False
+    preferences_path = _chrome_profile_preferences(profile_dir)
+    if preferences_path is None:
+        return False
+
+    preferences = _read_json_object(preferences_path) or {}
+    extensions = preferences.get("extensions")
+    settings = extensions.get("settings") if isinstance(extensions, dict) else None
+    extension = (
+        settings.get(CHROME_EXTENSION_ID) if isinstance(settings, dict) else None
+    )
+    return isinstance(extension, dict) and extension.get("state") == 1
 
 
 def _open_chrome_url(url: str) -> None:

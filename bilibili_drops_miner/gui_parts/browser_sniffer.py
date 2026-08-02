@@ -44,6 +44,11 @@ LOGIN_COOKIE_NAMES = {
 }
 
 
+def configure_chromium_audio(options: Any, *, mute_audio: bool) -> None:
+    if mute_audio:
+        options.add_argument("--mute-audio")
+
+
 def normalize_tab_task_groups(payload: Any) -> list[dict[str, object]]:
     if not isinstance(payload, dict):
         return []
@@ -232,6 +237,7 @@ def start_browser_sniff(
     browser_preference: str | None = None,
     finish_on_any: bool = False,
     initial_url: str = "https://www.bilibili.com/",
+    mute_audio: bool = False,
     logger: logging.Logger | None = None,
 ) -> threading.Thread:
     logger = logger or logging.getLogger(__name__)
@@ -314,6 +320,7 @@ def start_browser_sniff(
                             need_page=need_page,
                         )
                         opts = webdriver.EdgeOptions()
+                        configure_chromium_audio(opts, mute_audio=mute_audio)
                         opts.set_capability(
                             "goog:loggingPrefs", {"performance": "ALL"}
                         )
@@ -333,6 +340,7 @@ def start_browser_sniff(
                             need_page=need_page,
                         )
                         opts = webdriver.ChromeOptions()
+                        configure_chromium_audio(opts, mute_audio=mute_audio)
                         opts.set_capability(
                             "goog:loggingPrefs", {"performance": "ALL"}
                         )

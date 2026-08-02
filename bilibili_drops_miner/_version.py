@@ -1,4 +1,4 @@
-APP_VERSION = "v1.6.3-macos.1"
+APP_VERSION = "v1.6.3-macos.2"
 UPDATE_CHANNEL = "release"
 REPOSITORY_URL = "https://github.com/MarchPhantasia/BiliBiliDropsMiner"
 LATEST_RELEASE_API = "https://api.github.com/repos/MarchPhantasia/BiliBiliDropsMiner/releases/latest"

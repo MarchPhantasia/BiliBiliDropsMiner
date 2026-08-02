@@ -12,6 +12,7 @@ from bilibili_drops_miner.gui_parts.browser_actions import BrowserActions
 from bilibili_drops_miner.gui_parts.browser_sniffer import (
     classify_sniff_payload,
     collect_task_groups_from_tabs,
+    configure_chromium_audio,
     is_sniff_finished,
     normalize_tab_task_groups,
     select_login_cookies,
@@ -203,6 +204,22 @@ class ExtensionBuilderTest(unittest.TestCase):
 
 
 class BrowserSnifferTest(unittest.TestCase):
+    def test_configure_chromium_audio_only_mutes_when_requested(self) -> None:
+        class FakeOptions:
+            def __init__(self) -> None:
+                self.arguments: list[str] = []
+
+            def add_argument(self, argument: str) -> None:
+                self.arguments.append(argument)
+
+        muted = FakeOptions()
+        normal = FakeOptions()
+        configure_chromium_audio(muted, mute_audio=True)
+        configure_chromium_audio(normal, mute_audio=False)
+
+        self.assertEqual(muted.arguments, ["--mute-audio"])
+        self.assertEqual(normal.arguments, [])
+
     def test_task_ids_from_performance_logs_uses_latest_request(self) -> None:
         self.assertEqual(
             task_ids_from_performance_logs(
@@ -434,6 +451,7 @@ class BrowserActionsTest(unittest.TestCase):
 
         self.assertEqual(browser_sniff.call_args.kwargs["browser_preference"], "chrome")
         self.assertTrue(browser_sniff.call_args.kwargs["finish_on_any"])
+        self.assertTrue(browser_sniff.call_args.kwargs["mute_audio"])
         self.assertEqual(
             browser_sniff.call_args.kwargs["initial_url"],
             "https://live.bilibili.com/23612045",

@@ -183,6 +183,7 @@ class BrowserActions:
         browser_preference: str | None = None,
         finish_on_any: bool = False,
         initial_url: str = "https://www.bilibili.com/",
+        mute_audio: bool = False,
     ) -> None:
         def on_error(title: str, message: str) -> None:
             self._post_ui_task(self._show_error, title, message)
@@ -200,6 +201,7 @@ class BrowserActions:
             browser_preference=browser_preference,
             finish_on_any=finish_on_any,
             initial_url=initial_url,
+            mute_audio=mute_audio,
             logger=self._logger,
         )
 
@@ -291,6 +293,7 @@ class BrowserActions:
             browser_preference=browser,
             finish_on_any=True,
             initial_url=f"https://live.bilibili.com/{room_id}",
+            mute_audio=True,
         )
 
     def _auto_fetch_cookie_with_temporary_browser(self) -> None:
